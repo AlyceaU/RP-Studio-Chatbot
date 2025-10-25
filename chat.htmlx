@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <body style="max-width:600px;margin:24px auto;font-family:system-ui">
+    <h2>RPTT Trainee Guide – Test Chat (Button Check)</h2>
+    <div id="log" style="min-height:160px;border:1px solid #ccc;border-radius:12px;padding:12px;white-space:pre-wrap"></div>
+    <textarea id="msg" rows="3" style="width:100%;margin:12px 0;"></textarea>
+    <button id="send" type="button">Send</button>
+
+    <script>
+      const log = document.getElementById('log');
+      const btn = document.getElementById('send');
+      function say(t){ log.textContent += t + "\n"; }
+
+      // Prove JS is running
+      say("page loaded");
+
+      // Prove clicks are captured
+      btn.addEventListener('click', () => {
+        say("clicked");
+      });
+    </script>
+  </body>
+</html>
+
