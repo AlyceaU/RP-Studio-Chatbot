@@ -1,0 +1,13 @@
+Real Pilates® Studio Team Assistant
+
+Ask me anything about our studio operations, scheduling, policies, or systems.
+
+What are the studio opening hours?
+How do I book a client when Mindbody is down?
+Where can I find the cleaning checklist?
+What’s the procedure if a client cancels late?
+How do I submit a sub request?
+What's the dress code?
+Are we closed on any Holidays?
+Assistant: Hi! I’m your RP Studio Assistant — here to help with anything about our studio systems and team processes.
+

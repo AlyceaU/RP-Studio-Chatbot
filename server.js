@@ -175,13 +175,13 @@ app.post('/api/chat', async (req, res) => {
     const hits = findRelevantChunks(userMessage, 5);
     const context =
       hits.length
-        ? `\n\nRPTT Reference (from uploaded PDFs):\n${hits.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')}\n\n`
+        ? `\n\nStudio Reference (from uploaded PDFs):\n${hits.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')}\n\n`
         : '';
 
-    const system = `You are the Real Pilates RPTT Trainee Guide Assistant.
-Use warm, professional, on-brand language.
-ONLY answer using the RPTT Trainee Guide and the provided "RPTT Reference" context below.
-If the answer is not clearly present, say: "I don’t have that in the RPTT Guide."${instructions ? '\n\n' + instructions : ''}`;
+    const system = `You are the Real Pilates® Studio Team Assistant.
+Use warm, professional, on-brand language aligned with Real Pilates® studio operations.
+ONLY answer using the Studio policies and the provided "Studio Reference" context below.
+If the answer is not clearly present, say: "I don’t have that in the RP Studio docs."${instructions ? '\n\n' + instructions : ''}`;
 
     const out = await client.responses.create({
       model: 'gpt-4o-mini',
