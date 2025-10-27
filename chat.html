@@ -1,80 +1,79 @@
-<img src="logo-rp.png" alt="Real Pilates Logo" style="width:600px;">
-
-<style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Real Pilates® Studio Team Assistant</title>
+  <style>
     body {
-    font-family: Arial, sans-serif;
-    margin: 40px;
-    text-align: center;
-  }
-  img {
-    display: block;
-    margin: 0 auto 10px auto;
-  }
-  h1 {
-    font-size: 28px;
-    margin-top: 10px;
-    margin-bottom: 5px;
-    font-weight: bold;
-    color: #06655C;
-  }
-  p {
-    font-size: 16px;
-    font-weight: bold;
-    margin-bottom: 10px;
-  }
-  ul {
-    list-style-type: none;
-    padding: 0;
-    margin: 20px auto;
-    width: fit-content;
-  }
-  li {
-    background-color: #f4f4f4;
-    border-radius: 6px;
-    padding: 8px 16px;
-    margin: 6px 0;
-    transition: 0.2s;
-  }
-  li:hover {
-    background-color: #40C1AC;
-    color: white;
-  }
-  input[type="text"] {
-    width: 300px;
-    padding: 6px;
-  }
-  input[type="submit"] {
-    padding: 6px 12px;
-    margin-left: 4px;
-  }
-</style>
-<p><strong>I’m your Real Pilates® Studio Team Assistant.</strong><br>
-Ask me anything about Real Pilates® studio policies, schedules, and procedures.</p>
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 60px;
+      color: #000;
+    }
+    h1 {
+      color: #40C1AC;
+      font-size: 26px;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+    li {
+      background: #f0f0f0;
+      padding: 10px;
+      margin: 8px auto;
+      width: 300px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+    li:hover {
+      background: #e3faf7;
+    }
+    #reply {
+      text-align: left;
+      margin: 24px auto;
+      max-width: 700px;
+      white-space: pre-wrap;
+      border-top: 1px solid #ccc;
+      padding-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <img src="logo-rp.png" alt="Real Pilates Logo" style="width:180px;">
+  <h1>I'm your Real Pilates® Studio Team Assistant</h1>
+  <p>Ask me anything about Real Pilates® studio policies, schedules, and procedures.</p>
 
-<ul>
-  <li>What do I do if I'm sick and can't make it to work?</li>
-  <li>What do I do if a client gets injured?</li>
-  <li>What is the sub request process?</li>
-  <li>What is the dress code?</li>
-  <li>What is the policy for clients that are late?</li>
-</ul>
+  <ul>
+    <li>What do I do if I'm sick and can't make it to work?</li>
+    <li>What do I do if a client gets injured?</li>
+    <li>What is the sub request process?</li>
+    <li>What is the dress code?</li>
+    <li>What is the policy for clients that are late?</li>
+  </ul>
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  var items = document.querySelectorAll('ul li');
-  items.forEach(function (item) {
-    item.style.cursor = 'pointer';
-    item.addEventListener('click', function () {
-      var box = document.getElementById('userInput');
-      if (box) box.value = item.textContent.trim();
+  <input type="text" id="userInput" placeholder="Type your question here">
+  <input type="submit" id="askBtn" value="Ask RP Assistant">
+  <pre id="reply"></pre>
+
+  <script>
+    const box = document.getElementById('userInput');
+    const btn = document.getElementById('askBtn');
+    const out = document.getElementById('reply');
+
+    document.querySelectorAll('ul li').forEach(item => {
+      item.addEventListener('click', () => {
+        box.value = item.innerText;
+        askQuestion();
+      });
     });
-  });
-});
-</script>
 
+    btn.addEventListener('click', askQuestion);
 
-<br><br>
-<input type="text" id="userInput" placeholder="Type your question here">
-<input type="submit" value="Ask RP Assistant">
+    function askQuestion() {
+      const message = box.value.trim();
+      if (!message) return;
+
 
 
