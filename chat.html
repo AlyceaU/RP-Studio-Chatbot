@@ -1,88 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Real Pilates® Studio Team Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root { --teal:#40C1AC; --teal-dark:#2e8b83; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Poppins","Helvetica Neue",Arial,sans-serif;
+      background:#fff; color:#222; margin:0; padding:40px 16px; text-align:center; line-height:1.6;
+    }
+    .wrap { max-width:900px; margin:0 auto; }
+    img.logo { width:180px; display:block; margin:0 auto 10px; }
+    h1 { margin:8px 0 6px; font-size:26px; font-weight:600; color:var(--teal); }
+    p.lead { margin:0 0 16px; font-weight:600; }
+    ul.prompts { list-style:none; padding:0; margin:18px auto; max-width:520px; }
+    ul.prompts li {
+      background:#f5f7f6; padding:10px 14px; margin:8px 0; border-radius:10px; cursor:pointer; transition:.2s;
+    }
+    ul.prompts li:hover { background:#e7f7f3; }
+    .ask {
+      margin:18px auto 8px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;
+    }
+    .ask input[type="text"] {
+      width:520px; max-width:100%; padding:12px 14px; border:1px solid #cfcfcf; border-radius:8px; font-family:inherit;
+    }
+    .ask input[type="submit"] {
+      background:var(--teal); color:#fff; border:0; border-radius:8px; padding:12px 16px; cursor:pointer; font-family:inherit;
+    }
+    .ask input[type="submit"]:hover { background:var(--teal-dark); }
+    pre#reply {
+      text-align:left; margin:20px auto 0; max-width:700px; white-space:pre-wrap; border-top:1px solid #ddd; padding-top:16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <img class="logo" src="logo-rp.png" alt="Real Pilates Logo" />
+    <h1>I'm your Real Pilates® Studio Team Assistant</h1>
+    <p class="lead">Ask me anything about Real Pilates® studio policies, schedules, and procedures.</p>
 
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+    <ul class="prompts" id="prompts">
+      <li>What do I do if I'm sick and can't make it to work?</li>
+      <li>What do I do if a client gets injured?</li>
+      <li>What is the sub request process?</li>
+      <li>What is the dress code?</li>
+      <li>What is the policy for clients that are late?</li>
+    </ul>
 
-  body {
-    font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
-    background-color: #ffffff;
-    color: #222222;
-    text-align: center;
-    margin-top: 60px;
-    line-height: 1.6;
-  }
+    <div class="ask">
+      <input type="text" id="userInput" placeholder="Type your question here" />
+      <input type="submit" id="askBtn" value="Ask RP Assistant" />
+    </div>
 
-  h1 {
-    color: #40C1AC;
-    font-weight: 600;
-    font-size: 26px;
-    margin-bottom: 10px;
-  }
+    <pre id="reply"></pre>
+  </div>
 
-  p {
-    color: #444;
-    margin-bottom: 20px;
-  }
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const box = document.getElementById('userInput');
+      const btn = document.getElementById('askBtn');
+      const out = document.getElementById('reply');
 
-  ul {
-    list-style: none;
-    padding: 0;
-  }
+      // Click a prompt to auto-fill and ask
+      document.querySelectorAll('#prompts li').forEach(li => {
+        li.addEventListener('click', () => {
+          box.value = li.textContent.trim();
+          ask();
+        });
+      });
 
-  li {
-    background: #f5f7f6;
-    padding: 10px;
-    margin: 8px auto;
-    width: 320px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: 0.3s;
-  }
+      btn.addEventListener('click', ask);
+      box.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ask(); } });
 
-  li:hover {
-    background: #e7f7f3;
-  }
+      function ask() {
+        const message = (box.value || '').trim();
+        if (!message) return;
+        out.textContent = 'Thinking…';
+        fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        })
+        .then(r => r.json())
+        .then(data => { out.textContent = data.reply || 'No answer available.'; })
+        .catch(err => { console.error(err); out.textContent = 'Error reaching the assistant.'; });
+      }
+    });
+  </script>
+</body>
+</html>
 
-  input[type="text"] {
-    width: 300px;
-    padding: 10px;
-    border-radius: 6px;
-    border: 1px solid #ccc;
-    margin-top: 20px;
-    font-family: "Poppins", sans-serif;
-  }
-
-  input[type="submit"] {
-    background-color: #40C1AC;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 10px 20px;
-    cursor: pointer;
-    font-family: "Poppins", sans-serif;
-    margin-left: 10px;
-  }
-
-  input[type="submit"]:hover {
-    background-color: #2e8b83;
-  }
-
-  #reply {
-    text-align: left;
-    margin: 24px auto;
-    max-width: 700px;
-    white-space: pre-wrap;
-    border-top: 1px solid #ccc;
-    padding-top: 20px;
-  }
-</style>
-
-
-
-I'm your Real Pilates® Studio Team Assistant
-Ask me anything about Real Pilates® studio policies, schedules, and procedures.
-		What do I do if I'm sick and can't make it to work?
-		What do I do if a client gets injured?
-		What is the sub request process?
-		What is the dress code?
-		What is the policy for clients that are late?
 
