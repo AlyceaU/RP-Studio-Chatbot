@@ -14,54 +14,53 @@ app.use(express.json());
 app.use(express.static(__dirname));
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'chat.html')));
 
-// --- Load extra instructions if you have them ---
-let instructions = '';
-try {
-  instructions = fs.readFileSync(path.join(__dirname, 'RPTT_INSTRUCTIONS.txt'), 'utf8');
-} catch (_) { /* optional file */ }
+// ---------- Knowledge loader with embeddings (TXT/PDF) ----------
+const KNOWLEDGE_DIR = path.join(__dirname, 'knowledge');
+const INDEX_PATH = path.join(KNOWLEDGE_DIR, '.index.json'); // cache to disk
+let knowledge = [];   // [{ text, source }]
+let embeddings = [];  // [[...vector...]]
 
-// --- pdf-parse import (works with both CJS and ESM builds) ---
 let pdfParse = null;
 try {
   pdfParse = require('pdf-parse');
   if (pdfParse && typeof pdfParse !== 'function' && pdfParse.default) {
     pdfParse = pdfParse.default;
   }
-} catch (e) {
-  console.warn('pdf-parse not installed. PDFs will be skipped.', e.message);
+} catch (_) {
+  console.warn('pdf-parse not installed. PDFs will be skipped.');
 }
 
-// --- Simple knowledge loader: reads .txt and .pdf from ./knowledge ---
-const KNOWLEDGE_DIR = path.join(__dirname, 'knowledge');
-let knowledgeChunks = [];
+function normName(f) {
+  return f.replace(/\.(pdf|txt)$/i, '').trim();
+}
 
 async function loadKnowledge() {
-  knowledgeChunks = [];
+  knowledge = [];
+  embeddings = [];
+
   if (!fs.existsSync(KNOWLEDGE_DIR)) {
     console.log('knowledge/ folder not found—continuing without local knowledge.');
     return;
   }
-  const files = fs.readdirSync(KNOWLEDGE_DIR);
+  const files = fs.readdirSync(KNOWLEDGE_DIR).filter(f => !f.startsWith('.'));
 
   for (const f of files) {
     const full = path.join(KNOWLEDGE_DIR, f);
-    const stat = fs.statSync(full);
-    if (!stat.isFile()) continue;
+    if (!fs.statSync(full).isFile()) continue;
 
     const lower = f.toLowerCase();
     try {
       if (lower.endsWith('.txt')) {
         const text = fs.readFileSync(full, 'utf8');
-        pushChunks(text);
+        pushChunks(text, normName(f));
       } else if (lower.endsWith('.pdf')) {
-        if (!pdfParse) {
-          console.warn(`Skipping PDF "${f}" because pdf-parse is unavailable.`);
-          continue;
-        }
+        if (!pdfParse) { console.warn(`Skipping PDF "${f}" (no pdf-parse).`); continue; }
         try {
           const data = fs.readFileSync(full);
           const parsed = await pdfParse(data);
-          pushChunks(parsed.text || '');
+          const text = parsed.text || '';
+          console.log(`[KB] Parsed ${f}: ${text.length} chars`);
+          pushChunks(text, normName(f));
         } catch (e) {
           console.warn(`PDF parse failed for ${f}: ${e.message}`);
         }
@@ -70,118 +69,110 @@ async function loadKnowledge() {
       console.warn(`Failed reading ${f}: ${e.message}`);
     }
   }
-  console.log(`Loaded ${knowledgeChunks.length} chunks from knowledge/`);
+
+  console.log(`Chunking complete: ${knowledge.length} chunks. Building/loading embeddings…`);
+  await buildOrLoadEmbeddings();
+  console.log(`Embeddings ready for ${embeddings.length} chunks.`);
 }
 
-function pushChunks(text) {
+function pushChunks(text, source) {
   if (!text) return;
-  // Split on blank lines and trim
-  const parts = text
-    .split(/\n{2,}/)
-    .map(s => s.trim())
-    .filter(Boolean);
+  // normalize and split on blank lines
+  const blocks = text.replace(/\r/g, '').split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
 
-  for (const p of parts) {
-    if (p.length > 2000) {
-      // Soft chunking for long paragraphs
-      for (let i = 0; i < p.length; i += 2000) {
-        knowledgeChunks.push(p.slice(i, i + 2000));
-      }
+  const MAX = 800;     // target chunk size
+  const OVERLAP = 150; // keep context overlap
+
+  for (const b of blocks) {
+    if (b.length <= MAX) {
+      knowledge.push({ text: b, source });
     } else {
-      knowledgeChunks.push(p);
+      let i = 0;
+      while (i < b.length) {
+        const slice = b.slice(i, i + MAX);
+        knowledge.push({ text: slice, source });
+        if (i + MAX >= b.length) break;
+        i += (MAX - OVERLAP);
+      }
     }
   }
 }
 
-// --- Smarter keyword retriever with synonyms, phrase boosts, and variant handling ---
-function findRelevantChunks(question, max = 5) {
-  if (!knowledgeChunks.length) return [];
-
-  const norm = s => (s || '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const q = norm(question);
-
-  const synonymSets = [
-    ['retest', 're test', 're-test', 'retake', 're take', 're-take'],
-    ['fee', 'cost', 'charge', 'payment', 'price'],
-    ['wait', 'waiting', 'delay', 'hold', 'gap', 'cooldown', 'cool down'],
-    ['period', 'window', 'timeframe', 'timeline'],
-    ['hours', 'requirements', 'prerequisites', 'prereq'],
-    ['policy', 'rule', 'guideline', 'guidance'],
-    ['exam', 'practical', 'test', 'assessment'],
-    ['schedule', 'book', 'arrange'],
-  ];
-
-  const qTokens = new Set(q.split(' ').filter(w => w.length > 2));
-  for (const set of synonymSets) {
-    if (set.some(w => qTokens.has(w))) {
-      for (const w of set) qTokens.add(w);
-    }
-  }
-
-  const phraseBoosts = [
-    'retest fee',
-    're test fee',
-    're-test fee',
-    'waiting period',
-    'wait period',
-    'retest waiting',
-    're test waiting',
-    're-test waiting',
-    'how many hours',
-    'hours to retest',
-    'hours before retest',
-  ];
-
-  const scored = knowledgeChunks.map(c => {
-    const text = norm(c);
-    let score = 0;
-
-    for (const t of qTokens) {
-      if (text.includes(t)) score += 1;
-    }
-    for (const p of phraseBoosts) {
-      if (text.includes(p)) score += 6;
-    }
-    if (/\bre[\s-]?test\b/.test(q) && /\bre[\s-]?test\b/.test(text)) score += 4;
-
-    const hasNumberInQ = /\b\d+/.test(q);
-    const hasNumberInC = /\b\d+/.test(text);
-    if (hasNumberInQ && hasNumberInC) score += 2;
-
-    return { c, score };
-  });
-
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .slice(0, max)
-    .filter(x => x.score > 0)
-    .map(x => x.c);
-}
-
-// --- OpenAI client ---
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// --- Chat route (system is DEFINED INSIDE here) ---
+async function buildOrLoadEmbeddings() {
+  // try loading cached index (must match chunk count)
+  try {
+    if (fs.existsSync(INDEX_PATH)) {
+      const data = JSON.parse(fs.readFileSync(INDEX_PATH, 'utf8'));
+      if (Array.isArray(data.embeddings) && data.embeddings.length === knowledge.length) {
+        embeddings = data.embeddings;
+        return;
+      }
+    }
+  } catch (_) {}
+
+  // build fresh in batches
+  const texts = knowledge.map(k => k.text);
+  const BATCH = 64;
+  const all = [];
+  for (let i = 0; i < texts.length; i += BATCH) {
+    const batch = texts.slice(i, i + BATCH);
+    const resp = await client.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: batch,
+    });
+    resp.data.forEach(item => all.push(item.embedding));
+  }
+  embeddings = all;
+
+  // cache to disk
+  try {
+    fs.writeFileSync(INDEX_PATH, JSON.stringify({ embeddings }, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('Failed to write embedding index:', e.message);
+  }
+}
+
+function cosineSim(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    dot += x * y; na += x * x; nb += y * y;
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-8);
+}
+
+async function findRelevantChunksEmbedding(question, k = 8) {
+  if (!knowledge.length || !embeddings.length) return [];
+  const qEmb = await client.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: question
+  });
+  const qVec = qEmb.data[0].embedding;
+  const scored = embeddings
+    .map((vec, i) => ({ i, s: cosineSim(qVec, vec) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, k)
+    .map(({ i }) => knowledge[i]);
+  return scored;
+}
+
+// ---------- Chat route (uses embeddings + concise answers) ----------
 app.post('/api/chat', async (req, res) => {
   try {
-    console.log('POST /api/chat body:', req.body);
     const userMessage = (req.body && req.body.message) ? String(req.body.message) : '';
 
-    const hits = findRelevantChunks(userMessage, 5);
+    const hits = await findRelevantChunksEmbedding(userMessage, 8);
     const context =
       hits.length
-        ? `\n\nStudio Reference (from uploaded PDFs):\n${hits.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')}\n\n`
+        ? `\n\nStudio Reference:\n${hits.map((h, i) => `[${i + 1}] (${h.source}) ${h.text}`).join('\n\n')}\n\n`
         : '';
 
     const system = `You are the Real Pilates® Studio Team Assistant.
-Use warm, professional, on-brand language aligned with Real Pilates® studio operations.
-ONLY answer using the Studio policies and the provided "Studio Reference" context below.
-If the answer is not clearly present, say: "I don’t have that in the RP Studio docs."${instructions ? '\n\n' + instructions : ''}`;
+Use warm, professional, concise language (2–4 sentences).
+Answer ONLY from "Studio Reference" below. If the answer is not clearly present, say "I don’t have that in the RP Studio docs."
+Cite the primary source in parentheses at the end, e.g., "(Employee Handbook)".`;
 
     const out = await client.responses.create({
       model: 'gpt-4o-mini',
@@ -191,46 +182,37 @@ If the answer is not clearly present, say: "I don’t have that in the RP Studio
       ]
     });
 
-    // Robust extraction of text across SDK versions
     let reply = '';
     if (out.output_text) {
       reply = out.output_text;
     } else if (Array.isArray(out.output)) {
-      // Newer SDK: iterate events
-      reply = out.output
-        .flatMap(ev => (ev?.content || []))
+      reply = out.output.flatMap(ev => (ev?.content || []))
         .map(c => c?.text?.value || '')
-        .join('\n')
-        .trim();
+        .join('\n').trim();
     }
-    if (!reply && out?.response?.output_text) {
-      reply = out.response.output_text;
-    }
-    reply = reply || 'I don’t have that in the RPTT Guide.';
+    reply = reply || 'I don’t have that in the RP Studio docs.';
 
-    console.log('reply length:', reply.length);
     res.json({ reply });
   } catch (e) {
     console.error('SERVER ERROR:', e.stack || e.message);
-    res.status(500).json({ error: e && e.message ? e.message : 'Server error' });
+    res.status(500).json({ error: e.message || 'Server error' });
   }
 });
 
-// --- Debug + hot reload ---
+// ---------- Debug + reload ----------
 app.get('/debug', (_req, res) => {
   try {
-    const dir = path.join(__dirname, 'knowledge');
     let files = [];
     let exists = false;
     try {
-      exists = fs.existsSync(dir);
-      if (exists) files = fs.readdirSync(dir);
+      exists = fs.existsSync(KNOWLEDGE_DIR);
+      if (exists) files = fs.readdirSync(KNOWLEDGE_DIR).filter(f => !f.startsWith('.'));
     } catch (_) {}
     res.json({
-      knowledgeDir: dir,
+      knowledgeDir: KNOWLEDGE_DIR,
       exists,
       files,
-      chunkCount: Array.isArray(knowledgeChunks) ? knowledgeChunks.length : 0
+      chunkCount: knowledge.length
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -240,12 +222,13 @@ app.get('/debug', (_req, res) => {
 app.post('/reload', async (_req, res) => {
   try {
     await loadKnowledge();
-    res.json({ ok: true, chunkCount: knowledgeChunks.length });
+    res.json({ ok: true, chunkCount: knowledge.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
+// ---------- Start ----------
 const PORT = process.env.PORT || 3000;
 loadKnowledge()
   .then(() => {
